@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import '../app_theme.dart';
 import '../data/document_store.dart';
 import '../data/models.dart';
+import 'document_viewer_screen.dart';
 
 class FolderScreen extends StatefulWidget {
   final ScanFolder folder;
@@ -15,8 +16,26 @@ class FolderScreen extends StatefulWidget {
 
 class _FolderScreenState extends State<FolderScreen> {
   final _store = DocumentStore.instance;
+  final Set<String> _selectedIds = {};
 
+  bool get _selectMode => _selectedIds.isNotEmpty;
   List<ScanDocument> get _docs => _store.documentsInFolder(widget.folder.id);
+
+  Future<void> _deleteSelected() async {
+    final ids = [..._selectedIds];
+    setState(() => _selectedIds.clear());
+    for (final id in ids) {
+      await _store.deleteDocument(id);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _openViewer(ScanDocument doc) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DocumentViewerScreen(doc: doc)),
+    );
+  }
 
   void _showOptions(ScanDocument doc) {
     showModalBottomSheet(
@@ -30,13 +49,20 @@ class _FolderScreenState extends State<FolderScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               decoration: BoxDecoration(
                   color: AppTheme.separator,
                   borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.open_in_new_outlined),
+              title: const Text('Open'),
+              onTap: () {
+                Navigator.pop(context);
+                _openViewer(doc);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
               title: const Text('Share'),
@@ -62,7 +88,8 @@ class _FolderScreenState extends State<FolderScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
+              title: const Text('Delete',
+                  style: TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(context);
                 showDialog(
@@ -75,7 +102,8 @@ class _FolderScreenState extends State<FolderScreen> {
                           onPressed: () => Navigator.pop(context),
                           child: const Text('Cancel')),
                       FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                        style: FilledButton.styleFrom(
+                            backgroundColor: Colors.red),
                         onPressed: () async {
                           Navigator.pop(context);
                           await _store.deleteDocument(doc.id);
@@ -100,10 +128,27 @@ class _FolderScreenState extends State<FolderScreen> {
     return Scaffold(
       backgroundColor: AppTheme.bgGray,
       appBar: AppBar(
-        title: Text(widget.folder.name),
+        title: _selectMode
+            ? Text('${_selectedIds.length} selected',
+                style: const TextStyle(color: AppTheme.primary))
+            : Text(widget.folder.name),
         backgroundColor: AppTheme.cardBg,
         foregroundColor: AppTheme.textDark,
         elevation: 0,
+        actions: _selectMode
+            ? [
+                TextButton(
+                  onPressed: _deleteSelected,
+                  child: const Text('Delete',
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.w600)),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _selectedIds.clear()),
+                  child: const Text('Cancel'),
+                ),
+              ]
+            : null,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(height: 1, color: AppTheme.separator),
@@ -130,55 +175,119 @@ class _FolderScreenState extends State<FolderScreen> {
               separatorBuilder: (_, _) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
                 final doc = docs[i];
-                return Container(
-                  decoration: BoxDecoration(
-                    color: AppTheme.cardBg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.separator.withAlpha(128)),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: doc.iconColor.withAlpha(31),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.picture_as_pdf_rounded,
-                            color: doc.iconColor, size: 24),
+                final selected = _selectedIds.contains(doc.id);
+                return GestureDetector(
+                  onTap: () {
+                    if (_selectMode) {
+                      setState(() {
+                        if (selected) {
+                          _selectedIds.remove(doc.id);
+                        } else {
+                          _selectedIds.add(doc.id);
+                        }
+                      });
+                    } else {
+                      _openViewer(doc);
+                    }
+                  },
+                  onLongPress: () =>
+                      setState(() => _selectedIds.add(doc.id)),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cardBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? AppTheme.primary
+                            : AppTheme.separator.withAlpha(128),
+                        width: selected ? 2 : 1,
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        // Thumbnail + selection overlay
+                        Stack(
                           children: [
-                            Text(
-                              doc.name,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textDark,
+                            Container(
+                              width: 48, height: 60,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                color: doc.iconColor.withAlpha(25),
                               ),
-                              overflow: TextOverflow.ellipsis,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: doc.pageImagePaths.isNotEmpty &&
+                                        File(doc.pageImagePaths.first)
+                                            .existsSync()
+                                    ? Image.file(
+                                        File(doc.pageImagePaths.first),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : Icon(Icons.picture_as_pdf_rounded,
+                                        color: doc.iconColor, size: 24),
+                              ),
                             ),
-                            const SizedBox(height: 3),
-                            Text(doc.meta,
-                                style: const TextStyle(
-                                    fontSize: 12, color: AppTheme.textGray)),
+                            if (_selectMode)
+                              Positioned(
+                                top: 2, left: 2,
+                                child: Container(
+                                  width: 20, height: 20,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? AppTheme.primary
+                                        : Colors.white,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: selected
+                                          ? AppTheme.primary
+                                          : Colors.grey.shade400,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: selected
+                                      ? const Icon(Icons.check,
+                                          color: Colors.white, size: 12)
+                                      : null,
+                                ),
+                              ),
                           ],
                         ),
-                      ),
-                      GestureDetector(
-                        onTap: () => _showOptions(doc),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4),
-                          child: Icon(Icons.more_vert,
-                              color: AppTheme.textGray, size: 20),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                doc.name,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppTheme.textDark,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(doc.meta,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textGray)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                        if (!_selectMode)
+                          GestureDetector(
+                            onTap: () => _showOptions(doc),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.more_vert,
+                                  color: AppTheme.textGray, size: 20),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 );
               },

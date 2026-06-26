@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:image_picker/image_picker.dart';
 import '../app_theme.dart';
 import 'edit_page_screen.dart';
 
@@ -61,7 +63,23 @@ class _ScannerScreenState extends State<ScannerScreen> {
     await _ctrl?.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
   }
 
+  Future<void> _pickFromGallery() async {
+    final picker = ImagePicker();
+    final images = await picker.pickMultiImage();
+    if (images.isEmpty) return;
+    final dir = await getApplicationDocumentsDirectory();
+    final scanDir = Directory('${dir.path}/scans');
+    await scanDir.create(recursive: true);
+    for (final img in images) {
+      final dest =
+          '${scanDir.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(img.path).copy(dest);
+      if (mounted) setState(() => _capturedPaths.add(dest));
+    }
+  }
+
   Future<void> _capture() async {
+    HapticFeedback.mediumImpact();
     if (_ready && _ctrl != null) {
       try {
         final xfile = await _ctrl!.takePicture();
@@ -196,6 +214,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
           _circleBtn(Icons.close_rounded, () => Navigator.pop(context)),
           Row(
             children: [
+              _circleBtn(Icons.photo_library_outlined, _pickFromGallery),
+              const SizedBox(width: 10),
               _circleBtn(
                 _flashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
                 _toggleFlash,

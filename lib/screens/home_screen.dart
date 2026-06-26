@@ -8,6 +8,9 @@ import '../data/models.dart';
 import 'scanner_screen.dart';
 import 'search_screen.dart';
 import 'folder_screen.dart';
+import 'document_viewer_screen.dart';
+
+enum _SortBy { newest, oldest, nameAZ, nameZA, sizeLarge }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,6 +22,52 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _store = DocumentStore.instance;
   int _navIndex = 0;
+  _SortBy _sortBy = _SortBy.newest;
+  final Set<String> _selectedIds = {};
+
+  bool get _selectMode => _selectedIds.isNotEmpty;
+
+  String get _storageLabel {
+    final count = _store.documents.length;
+    final bytes = _store.documents.fold(0, (s, d) => s + d.sizeBytes);
+    final sizeStr = bytes < 1024 * 1024
+        ? '${(bytes / 1024).toStringAsFixed(0)} KB'
+        : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return '$count ${count == 1 ? 'doc' : 'docs'} · $sizeStr';
+  }
+
+  List<ScanDocument> _sorted(List<ScanDocument> docs) {
+    final list = [...docs];
+    switch (_sortBy) {
+      case _SortBy.newest:
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      case _SortBy.oldest:
+        list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      case _SortBy.nameAZ:
+        list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      case _SortBy.nameZA:
+        list.sort((a, b) => b.name.toLowerCase().compareTo(a.name.toLowerCase()));
+      case _SortBy.sizeLarge:
+        list.sort((a, b) => b.sizeBytes.compareTo(a.sizeBytes));
+    }
+    return list;
+  }
+
+  Future<void> _deleteSelected() async {
+    final ids = [..._selectedIds];
+    setState(() => _selectedIds.clear());
+    for (final id in ids) {
+      await _store.deleteDocument(id);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _openViewer(ScanDocument doc) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DocumentViewerScreen(doc: doc)),
+    );
+  }
 
   Future<void> _openScanner() async {
     await Navigator.push(
@@ -63,8 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   return GestureDetector(
                     onTap: () => setS(() => selectedColor = i),
                     child: Container(
-                      width: 32,
-                      height: 32,
+                      width: 32, height: 32,
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       decoration: BoxDecoration(
                         color: colors[i],
@@ -177,14 +225,24 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            'Folders',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.w700,
-              color: AppTheme.textDark,
-              letterSpacing: -0.5,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Folders',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textDark,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              if (_store.documents.isNotEmpty)
+                Text(
+                  _storageLabel,
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textGray),
+                ),
+            ],
           ),
           GestureDetector(
             onTap: _showNewFolderDialog,
@@ -291,15 +349,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: AppTheme.cardBg,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.separator, style: BorderStyle.solid),
+                  border: Border.all(color: AppTheme.separator),
                 ),
                 child: const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.create_new_folder_outlined, color: AppTheme.textGray, size: 28),
+                      Icon(Icons.create_new_folder_outlined,
+                          color: AppTheme.textGray, size: 28),
                       SizedBox(height: 6),
-                      Text('Create a folder', style: TextStyle(color: AppTheme.textGray)),
+                      Text('Create a folder',
+                          style: TextStyle(color: AppTheme.textGray)),
                     ],
                   ),
                 ),
@@ -320,15 +380,12 @@ class _HomeScreenState extends State<HomeScreen> {
             itemCount: folders.length,
             itemBuilder: (_, i) {
               final f = folders[i];
-              final count = _store.folderFileCount(f.id);
               return _FolderCard(
                 folder: f,
-                fileCount: count,
+                fileCount: _store.folderFileCount(f.id),
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => FolderScreen(folder: f),
-                  ),
+                  MaterialPageRoute(builder: (_) => FolderScreen(folder: f)),
                 ).then((_) => setState(() {})),
               );
             },
@@ -338,43 +395,70 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFilesSection(List<ScanDocument> docs) {
+    final sorted = _sorted(docs);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Uncategorized Files',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
-                ),
+              Expanded(
+                child: _selectMode
+                    ? Text(
+                        '${_selectedIds.length} selected',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.primary,
+                        ),
+                      )
+                    : const Text(
+                        'Uncategorized Files',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
               ),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              if (_selectMode) ...[
+                TextButton(
+                  onPressed: _deleteSelected,
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  child: const Text('Delete',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
                 ),
-                child: const Text('See All',
-                    style: TextStyle(color: AppTheme.primary, fontSize: 14)),
-              ),
+                TextButton(
+                  onPressed: () => setState(() => _selectedIds.clear()),
+                  style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  child: const Text('Cancel'),
+                ),
+              ] else
+                PopupMenuButton<_SortBy>(
+                  icon: const Icon(Icons.sort, color: AppTheme.textGray, size: 20),
+                  initialValue: _sortBy,
+                  onSelected: (v) => setState(() => _sortBy = v),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: _SortBy.newest, child: Text('Newest first')),
+                    PopupMenuItem(value: _SortBy.oldest, child: Text('Oldest first')),
+                    PopupMenuItem(value: _SortBy.nameAZ, child: Text('Name A→Z')),
+                    PopupMenuItem(value: _SortBy.nameZA, child: Text('Name Z→A')),
+                    PopupMenuItem(value: _SortBy.sizeLarge, child: Text('Largest first')),
+                  ],
+                ),
             ],
           ),
         ),
         const SizedBox(height: 8),
-        if (docs.isEmpty)
+        if (sorted.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.description_outlined, size: 40, color: AppTheme.textGray),
+                  Icon(Icons.description_outlined,
+                      size: 40, color: AppTheme.textGray),
                   SizedBox(height: 8),
                   Text(
                     'No documents yet\nTap + to scan your first document',
@@ -390,12 +474,31 @@ class _HomeScreenState extends State<HomeScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            itemCount: docs.length,
+            itemCount: sorted.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _FileCard(
-              doc: docs[i],
-              onMoreTap: () => _showFileOptions(docs[i]),
-            ),
+            itemBuilder: (_, i) {
+              final doc = sorted[i];
+              return _FileCard(
+                doc: doc,
+                selectMode: _selectMode,
+                selected: _selectedIds.contains(doc.id),
+                onTap: () {
+                  if (_selectMode) {
+                    setState(() {
+                      if (_selectedIds.contains(doc.id)) {
+                        _selectedIds.remove(doc.id);
+                      } else {
+                        _selectedIds.add(doc.id);
+                      }
+                    });
+                  } else {
+                    _openViewer(doc);
+                  }
+                },
+                onLongPress: () => setState(() => _selectedIds.add(doc.id)),
+                onMoreTap: () => _showFileOptions(doc),
+              );
+            },
           ),
       ],
     );
@@ -434,7 +537,8 @@ class _HomeScreenState extends State<HomeScreen> {
                           setState(() => _navIndex = 1);
                           await Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const SearchScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const SearchScreen()),
                           );
                           if (mounted) setState(() => _navIndex = 0);
                         },
@@ -482,8 +586,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ──────────────────────────────────────────────────────────────
-// Sub-widgets
 // ──────────────────────────────────────────────────────────────
 
 class _NavBtn extends StatelessWidget {
@@ -565,7 +667,8 @@ class _FolderCard extends StatelessWidget {
                 color: folder.color.withAlpha(31),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.folder_rounded, color: folder.color, size: 28),
+              child: Icon(Icons.folder_rounded,
+                  color: folder.color, size: 28),
             ),
             const Spacer(),
             Text(
@@ -590,68 +693,127 @@ class _FolderCard extends StatelessWidget {
 
 class _FileCard extends StatelessWidget {
   final ScanDocument doc;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final VoidCallback onMoreTap;
+  final bool selected;
+  final bool selectMode;
 
-  const _FileCard({required this.doc, required this.onMoreTap});
+  const _FileCard({
+    required this.doc,
+    this.onTap,
+    this.onLongPress,
+    required this.onMoreTap,
+    this.selected = false,
+    this.selectMode = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppTheme.cardBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.separator.withAlpha(128)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: doc.iconColor.withAlpha(31),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.picture_as_pdf_rounded,
-                color: doc.iconColor, size: 24),
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        decoration: BoxDecoration(
+          color: AppTheme.cardBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? AppTheme.primary
+                : AppTheme.separator.withAlpha(128),
+            width: selected ? 2 : 1,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            // Thumbnail with selection overlay
+            Stack(
               children: [
-                Text(
-                  doc.name,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textDark,
+                Container(
+                  width: 48,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: doc.iconColor.withAlpha(25),
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: doc.pageImagePaths.isNotEmpty &&
+                            File(doc.pageImagePaths.first).existsSync()
+                        ? Image.file(
+                            File(doc.pageImagePaths.first),
+                            fit: BoxFit.cover,
+                          )
+                        : Icon(Icons.picture_as_pdf_rounded,
+                            color: doc.iconColor, size: 24),
+                  ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  doc.meta,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.textGray),
-                ),
+                if (selectMode)
+                  Positioned(
+                    top: 2,
+                    left: 2,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: selected ? AppTheme.primary : Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected
+                              ? AppTheme.primary
+                              : Colors.grey.shade400,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: selected
+                          ? const Icon(Icons.check,
+                              color: Colors.white, size: 12)
+                          : null,
+                    ),
+                  ),
               ],
             ),
-          ),
-          GestureDetector(
-            onTap: onMoreTap,
-            child: const Padding(
-              padding: EdgeInsets.all(4),
-              child: Icon(Icons.more_vert, color: AppTheme.textGray, size: 20),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    doc.name,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textDark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    doc.meta,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textGray),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            if (!selectMode)
+              GestureDetector(
+                onTap: onMoreTap,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.more_vert,
+                      color: AppTheme.textGray, size: 20),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ──────────────────────────────────────────────────────────────
-// File options bottom sheet
 // ──────────────────────────────────────────────────────────────
 
 class _FileOptionsSheet extends StatelessWidget {
@@ -679,8 +841,7 @@ class _FileOptionsSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 40,
-            height: 4,
+            width: 40, height: 4,
             decoration: BoxDecoration(
               color: AppTheme.separator,
               borderRadius: BorderRadius.circular(2),
@@ -692,7 +853,9 @@ class _FileOptionsSheet extends StatelessWidget {
             child: Text(
               doc.name,
               style: const TextStyle(
-                  fontWeight: FontWeight.w600, fontSize: 16, color: AppTheme.textDark),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  color: AppTheme.textDark),
               overflow: TextOverflow.ellipsis,
             ),
           ),
