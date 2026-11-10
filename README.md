@@ -1,85 +1,119 @@
 # ScanMaster
 
-A full-featured document scanning app built with Flutter. Capture physical documents with your camera, apply image filters, generate PDFs, and organise everything into folders — all stored locally on device.
+ScanMaster is a local-first document scanner and PDF organizer built with Flutter. Capture documents with the camera or import images from the gallery, enhance each page, save multi-page PDFs, and organize them into color-coded folders without a cloud backend.
 
 ## Features
 
-- **Document scanning** — Live camera preview with auto-mode, flash toggle, and multi-page capture
-- **Image filters** — Original, B&W, Magic, Text, and Sepia filters with instant GPU preview and compute-isolated processing on save
-- **PDF generation** — Every scan is saved as a searchable PDF using the `pdf` package
-- **Local storage** — All documents and folders persist via a JSON manifest; no cloud dependency
-- **Folder organisation** — Create colour-coded folders and move documents between them
-- **Search** — Full-text search across document names with highlighted matches and recent search history
-- **Share** — Share any PDF via the system share sheet
-- **Rename / Delete** — Manage documents from the home screen or within folders
+- **Multi-page scanning** — Capture unlimited pages with manual capture or a 3-second auto-capture mode.
+- **Gallery import** — Add multiple existing images to a scan in one step.
+- **Page editing** — Apply Original, B&W, Magic, Text, or Sepia filters; rotate pages; crop margins; adjust brightness and contrast; reorder pages; and remove unwanted pages.
+- **Multi-page PDFs** — Save processed pages as a PDF and open or share the result through the platform share sheet.
+- **Local storage** — Documents, folders, and recent searches are persisted locally in the app documents directory.
+- **Folder organization** — Create, rename, recolor, and delete folders; move documents between folders; or scan directly into a folder.
+- **Search and navigation** — Search document names with highlighted matches and recent-search history. Browse Home, Folders, and Recents views.
+- **Document management** — Rename, sort, share, multi-select, and delete documents.
+- **Accessibility and fallback behavior** — Custom controls have accessible labels, and scanning falls back to placeholder captures when a camera is unavailable (useful for emulator or desktop development).
 
-## Screens
+> PDFs currently contain the processed page images. OCR and searchable text layers are not implemented yet.
 
-| Splash | Home | Scanner | Edit | Search |
-|--------|------|---------|------|--------|
-| Animated progress bar | Folder grid + recent files | Live camera + thumbnail strip | Filter preview + PDF save | Live search + highlighted results |
+## Requirements
 
-## Tech Stack
+- Flutter SDK 3.12.2 or newer on the stable channel
+- Dart SDK compatible with the constraint in `pubspec.yaml`
+- Android API 21 or newer for Android builds
+- Xcode and iOS 12 or newer for iOS builds
 
-| Package | Purpose |
-|---------|---------|
-| `camera ^0.11` | Live camera preview and image capture |
-| `permission_handler ^11` | Runtime camera permission |
-| `path_provider ^2.1` | App documents directory |
-| `image ^4.2` | Server-side image processing in isolate |
-| `pdf ^3.11` | PDF generation from image bytes |
-| `share_plus ^10` | Native share sheet |
-| `uuid ^4.5` | Unique document IDs |
-| `intl ^0.20` | Date formatting |
+On Windows development machines, enable Developer Mode so Flutter can create symlinks:
 
-## Getting Started
+```text
+start ms-settings:developers
+```
 
-### Prerequisites
+### Permissions
 
-- Flutter SDK ≥ 3.12
-- Android API 21+ (minSdk enforced in `build.gradle.kts`)
-- iOS 12+ with `NSCameraUsageDescription` set in `Info.plist`
-- **Windows dev machines**: enable Developer Mode (`start ms-settings:developers`) for Flutter symlink support
+The app requests camera permission at runtime. iOS also declares camera and photo-library usage descriptions in `ios/Runner/Info.plist`. Review platform permission settings before testing camera or gallery features on a physical device.
 
-### Run
+## Getting started
+
+Install dependencies and run the app:
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-### Build APK
+Run static analysis and tests:
+
+```bash
+flutter analyze
+flutter test
+```
+
+Build a release APK locally:
 
 ```bash
 flutter build apk --release
 ```
 
-## Project Structure
+## Data and storage
 
+ScanMaster stores data under the platform application documents directory:
+
+```text
+<app documents directory>/manifest.json  # document, folder, and search metadata
+<app documents directory>/scans/          # processed page images
+<app documents directory>/pdfs/           # generated PDFs
 ```
+
+There is no account, sync service, or cloud upload. Deleting a document also removes its stored page images and PDF.
+
+## Project structure
+
+```text
 lib/
-├── main.dart               # App entry + DocumentStore init
-├── app_theme.dart          # Color constants
+├── main.dart                         # App entry point and store initialization
+├── app_theme.dart                     # Shared colors and theme
 ├── data/
-│   ├── models.dart         # ScanDocument, ScanFolder
-│   └── document_store.dart # Singleton JSON persistence
+│   ├── models.dart                    # ScanDocument and ScanFolder models
+│   └── document_store.dart            # Local JSON persistence and document operations
 ├── utils/
-│   └── image_processor.dart # compute() filter + ColorFilter matrices
+│   └── image_processor.dart           # Isolate-based image processing and previews
 └── screens/
     ├── splash_screen.dart
-    ├── home_screen.dart
-    ├── scanner_screen.dart
-    ├── edit_page_screen.dart
+    ├── home_screen.dart               # Home, Folders, and Recents navigation
+    ├── scanner_screen.dart             # Camera and gallery capture
+    ├── edit_page_screen.dart           # Page editing and PDF generation
     ├── folder_screen.dart
-    └── search_screen.dart
+    ├── search_screen.dart
+    └── document_viewer_screen.dart
 ```
 
-## Architecture Notes
+## Architecture notes
 
-- `DocumentStore` is a singleton that loads/saves `<app_docs>/manifest.json` on every write
-- Image processing runs in a Dart isolate via `compute()` to keep the UI thread free
-- Filter previews use `ColorFilter.matrix` (GPU, instant); actual save uses the `image` package (CPU, accurate)
-- Scanner falls back gracefully when a real camera is unavailable (emulator / desktop)
+- `DocumentStore` is a singleton that loads and persists `manifest.json` on writes.
+- Image transformations run through Flutter's `compute()` isolate pathway so the UI stays responsive.
+- Filter previews use GPU `ColorFilter.matrix` operations; final page images are processed with the `image` package before PDF generation.
+- Temporary raw captures are cleaned up when a scan is canceled or saved.
+
+## Dependencies
+
+| Package | Purpose |
+| --- | --- |
+| `camera` | Camera preview and image capture |
+| `permission_handler` | Runtime camera permission |
+| `image_picker` | Multi-image gallery import |
+| `path_provider` | App documents directory |
+| `image` | Image processing and JPEG encoding |
+| `pdf` | PDF generation |
+| `share_plus` | Native share sheet |
+| `uuid` | Unique document and folder IDs |
+| `intl` | Date formatting |
+
+## Android releases
+
+The GitHub Actions workflow in `.github/workflows/android-release.yml` runs tests, builds a release APK, and publishes it to GitHub Releases when `main` or a `v*` tag is pushed. It can also be started manually from the Actions tab.
+
+For versioning, update `version` in `pubspec.yaml` and add optional release notes at `.github/release-notes/<version>.md`. See [docs/android_release.md](docs/android_release.md) for signing setup and the complete release process.
 
 ## License
 
