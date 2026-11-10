@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +10,9 @@ import '../app_theme.dart';
 import 'edit_page_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
-  const ScannerScreen({super.key});
+  final String? initialFolderId;
+
+  const ScannerScreen({super.key, this.initialFolderId});
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
@@ -20,6 +23,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
   bool _ready = false;
   bool _cameraError = false;
   bool _flashOn = false;
+  bool _autoMode = false;
+  int _autoCountdown = 0;
+  Timer? _autoTimer;
+  bool _saved = false;
+  int _selectedThumbIndex = 0;
   final List<String> _capturedPaths = [];
 
   @override
@@ -29,12 +37,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      if (mounted) setState(() => _cameraError = true);
-      return;
-    }
     try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) setState(() => _cameraError = true);
+        return;
+      }
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         if (mounted) setState(() => _cameraError = true);
@@ -54,13 +62,55 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   @override
   void dispose() {
+    _autoTimer?.cancel();
     _ctrl?.dispose();
+    if (!_saved) {
+      for (final p in _capturedPaths) {
+        try {
+          final f = File(p);
+          if (f.existsSync()) f.deleteSync();
+        } catch (_) {}
+      }
+    }
     super.dispose();
   }
 
   Future<void> _toggleFlash() async {
     setState(() => _flashOn = !_flashOn);
     await _ctrl?.setFlashMode(_flashOn ? FlashMode.torch : FlashMode.off);
+  }
+
+  void _toggleAutoMode() {
+    setState(() {
+      _autoMode = !_autoMode;
+      if (_autoMode) {
+        _startAutoCountdown();
+      } else {
+        _autoTimer?.cancel();
+        _autoCountdown = 0;
+      }
+    });
+  }
+
+  void _startAutoCountdown() {
+    _autoTimer?.cancel();
+    _autoCountdown = 3;
+    _autoTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (!mounted || !_autoMode) {
+        timer.cancel();
+        return;
+      }
+      if (_autoCountdown > 1) {
+        setState(() => _autoCountdown--);
+      } else {
+        timer.cancel();
+        setState(() => _autoCountdown = 0);
+        await _capture();
+        if (mounted && _autoMode) {
+          _startAutoCountdown();
+        }
+      }
+    });
   }
 
   Future<void> _pickFromGallery() async {
@@ -74,7 +124,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final dest =
           '${scanDir.path}/${DateTime.now().microsecondsSinceEpoch}.jpg';
       await File(img.path).copy(dest);
-      if (mounted) setState(() => _capturedPaths.add(dest));
+      if (mounted) {
+        setState(() {
+          _capturedPaths.add(dest);
+          _selectedThumbIndex = _capturedPaths.length - 1;
+        });
+      }
     }
   }
 
@@ -87,9 +142,18 @@ class _ScannerScreenState extends State<ScannerScreen> {
         final dir = await getApplicationDocumentsDirectory();
         final scanDir = Directory('${dir.path}/scans');
         await scanDir.create(recursive: true);
-        final dest = '${scanDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final dest =
+            '${scanDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
         await File(xfile.path).copy(dest);
-        if (mounted) setState(() => _capturedPaths.add(dest));
+        try {
+          await File(xfile.path).delete();
+        } catch (_) {}
+        if (mounted) {
+          setState(() {
+            _capturedPaths.add(dest);
+            _selectedThumbIndex = _capturedPaths.length - 1;
+          });
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -102,15 +166,36 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final scanDir = Directory('${dir.path}/scans');
       await scanDir.create(recursive: true);
-      final path = '${scanDir.path}/placeholder_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final path =
+          '${scanDir.path}/placeholder_${DateTime.now().millisecondsSinceEpoch}.jpg';
       await _writePlaceholderImage(path, _capturedPaths.length + 1);
-      if (mounted) setState(() => _capturedPaths.add(path));
+      if (mounted) {
+        setState(() {
+          _capturedPaths.add(path);
+          _selectedThumbIndex = _capturedPaths.length - 1;
+        });
+      }
     }
+  }
+
+  void _removeCapturedPage(int index) {
+    if (index < 0 || index >= _capturedPaths.length) return;
+    final removed = _capturedPaths[index];
+    setState(() {
+      _capturedPaths.removeAt(index);
+      if (_selectedThumbIndex >= _capturedPaths.length) {
+        _selectedThumbIndex =
+            _capturedPaths.isEmpty ? 0 : _capturedPaths.length - 1;
+      }
+    });
+    try {
+      final f = File(removed);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 
   // Creates a minimal white JPEG as placeholder when camera is unavailable
   Future<void> _writePlaceholderImage(String path, int pageNum) async {
-    // Minimal 1x1 white JPEG bytes
     final bytes = <int>[
       0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
       0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
@@ -144,14 +229,35 @@ class _ScannerScreenState extends State<ScannerScreen> {
     await File(path).writeAsBytes(bytes);
   }
 
-  void _goToEdit() {
+  Future<void> _goToEdit() async {
     if (_capturedPaths.isEmpty) return;
-    Navigator.push(
+    _autoTimer?.cancel();
+    setState(() {
+      _autoMode = false;
+      _autoCountdown = 0;
+    });
+    final saved = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => EditPageScreen(imagePaths: _capturedPaths),
+        builder: (_) => EditPageScreen(
+          imagePaths: _capturedPaths,
+          initialFolderId: widget.initialFolderId,
+        ),
       ),
     );
+    if (saved == true && mounted) {
+      _saved = true;
+      Navigator.pop(context, true);
+    } else if (mounted) {
+      // Remove any pages deleted inside EditPageScreen
+      setState(() {
+        _capturedPaths.removeWhere((p) => !File(p).existsSync());
+        if (_selectedThumbIndex >= _capturedPaths.length) {
+          _selectedThumbIndex =
+              _capturedPaths.isEmpty ? 0 : _capturedPaths.length - 1;
+        }
+      });
+    }
   }
 
   @override
@@ -165,7 +271,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
           _buildTopBar(),
           _buildOverlay(),
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: _buildBottomBar(),
           ),
         ],
@@ -188,7 +296,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.camera_alt_outlined, size: 56, color: Colors.white54),
+                  Icon(Icons.camera_alt_outlined,
+                      size: 56, color: Colors.white54),
                   SizedBox(height: 12),
                   Text(
                     'Camera unavailable\nTap shutter to simulate a scan',
@@ -211,29 +320,48 @@ class _ScannerScreenState extends State<ScannerScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _circleBtn(Icons.close_rounded, () => Navigator.pop(context)),
+          _circleBtn(
+            Icons.close_rounded,
+            () => Navigator.pop(context),
+            label: 'Close scanner',
+          ),
           Row(
             children: [
-              _circleBtn(Icons.photo_library_outlined, _pickFromGallery),
+              _circleBtn(
+                Icons.photo_library_outlined,
+                _pickFromGallery,
+                label: 'Import from gallery',
+              ),
               const SizedBox(width: 10),
               _circleBtn(
                 _flashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
                 _toggleFlash,
+                label: _flashOn ? 'Turn flash off' : 'Turn flash on',
               ),
               const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withAlpha(115),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'AUTO',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
+              Semantics(
+                button: true,
+                label: _autoMode ? 'Auto capture on' : 'Manual capture mode',
+                child: GestureDetector(
+                  onTap: _toggleAutoMode,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _autoMode
+                          ? AppTheme.primary
+                          : Colors.black.withAlpha(115),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _autoMode ? 'AUTO' : 'MANUAL',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 1,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -244,22 +372,29 @@ class _ScannerScreenState extends State<ScannerScreen> {
     );
   }
 
-  Widget _circleBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: Colors.black.withAlpha(107),
-          shape: BoxShape.circle,
+  Widget _circleBtn(IconData icon, VoidCallback onTap, {required String label}) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.black.withAlpha(107),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: Colors.white, size: 22),
         ),
-        child: Icon(icon, color: Colors.white, size: 22),
       ),
     );
   }
 
   Widget _buildOverlay() {
+    final statusText = _autoMode && _autoCountdown > 0
+        ? 'AUTO SCAN IN $_autoCountdown...'
+        : (_capturedPaths.isEmpty ? 'READY TO SCAN' : 'TAP TO SCAN MORE');
     return Center(
       child: SizedBox(
         width: 270,
@@ -268,7 +403,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
           children: [
             Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.white.withAlpha(128), width: 1),
+                border:
+                    Border.all(color: Colors.white.withAlpha(128), width: 1),
                 borderRadius: BorderRadius.circular(6),
               ),
             ),
@@ -283,7 +419,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Text(
-                  _capturedPaths.isEmpty ? 'READY TO SCAN' : 'TAP TO SCAN MORE',
+                  statusText,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -299,12 +435,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
     );
   }
 
-  List<Widget> _corners() => [
-    _Corner(top: 0, left: 0),
-    _Corner(top: 0, right: 0, flipX: true),
-    _Corner(bottom: 0, left: 0, flipY: true),
-    _Corner(bottom: 0, right: 0, flipX: true, flipY: true),
-  ];
+  List<Widget> _corners() => const [
+        _Corner(top: 0, left: 0),
+        _Corner(top: 0, right: 0, flipX: true),
+        _Corner(bottom: 0, left: 0, flipY: true),
+        _Corner(bottom: 0, right: 0, flipX: true, flipY: true),
+      ];
 
   Widget _buildBottomBar() {
     final count = _capturedPaths.length;
@@ -319,26 +455,29 @@ class _ScannerScreenState extends State<ScannerScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Thumbnails
+          // Scrollable thumbnail strip showing all captured pages + Add tile
           SizedBox(
             height: 82,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (count >= 1) ...[
-                  _Thumb(path: _capturedPaths[0], number: 1, selected: true),
-                  const SizedBox(width: 8),
-                ],
-                if (count >= 2) ...[
-                  _Thumb(path: _capturedPaths[1], number: 2),
-                  const SizedBox(width: 8),
-                ],
-                if (count >= 3) ...[
-                  _Thumb(path: _capturedPaths[2], number: 3),
-                  const SizedBox(width: 8),
-                ],
-                _AddBtn(),
-              ],
+            child: Center(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < count; i++) ...[
+                      _Thumb(
+                        path: _capturedPaths[i],
+                        number: i + 1,
+                        selected: i == _selectedThumbIndex,
+                        onTap: () => setState(() => _selectedThumbIndex = i),
+                        onRemove: () => _removeCapturedPage(i),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    _AddBtn(onTap: _pickFromGallery),
+                  ],
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -363,45 +502,52 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 ),
               ),
               // Shutter
-              GestureDetector(
-                onTap: _capture,
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
-                  ),
-                  padding: const EdgeInsets.all(5),
+              Semantics(
+                button: true,
+                label: 'Take photo',
+                child: GestureDetector(
+                  onTap: _capture,
                   child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
                       shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    padding: const EdgeInsets.all(5),
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
                 ),
               ),
               // Save
               SizedBox(
-                width: 72,
-                child: GestureDetector(
-                  onTap: count > 0 ? _goToEdit : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: count > 0
-                          ? AppTheme.primary
-                          : Colors.grey.shade800,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Center(
-                      child: Text(
-                        count > 0 ? 'SAVE ($count)' : 'SAVE',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          letterSpacing: 0.5,
+                width: 84,
+                child: Semantics(
+                  button: true,
+                  label: count > 0 ? 'Save $count pages' : 'Save',
+                  child: GestureDetector(
+                    onTap: count > 0 ? _goToEdit : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color:
+                            count > 0 ? AppTheme.primary : Colors.grey.shade800,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Center(
+                        child: Text(
+                          count > 0 ? 'SAVE ($count)' : 'SAVE',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ),
                     ),
@@ -421,13 +567,22 @@ class _ScannerScreenState extends State<ScannerScreen> {
 class _Corner extends StatelessWidget {
   final double? top, bottom, left, right;
   final bool flipX, flipY;
-  const _Corner({this.top, this.bottom, this.left, this.right,
-      this.flipX = false, this.flipY = false});
+  const _Corner({
+    this.top,
+    this.bottom,
+    this.left,
+    this.right,
+    this.flipX = false,
+    this.flipY = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Positioned(
-      top: top, bottom: bottom, left: left, right: right,
+      top: top,
+      bottom: bottom,
+      left: left,
+      right: right,
       child: CustomPaint(
         size: const Size(22, 22),
         painter: _CornerPainter(flipX: flipX, flipY: flipY),
@@ -449,8 +604,10 @@ class _CornerPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     final x = flipX ? size.width : 0.0;
     final y = flipY ? size.height : 0.0;
-    canvas.drawLine(Offset(x, y), Offset(x + (flipX ? -size.width : size.width), y), paint);
-    canvas.drawLine(Offset(x, y), Offset(x, y + (flipY ? -size.height : size.height)), paint);
+    canvas.drawLine(
+        Offset(x, y), Offset(x + (flipX ? -size.width : size.width), y), paint);
+    canvas.drawLine(Offset(x, y),
+        Offset(x, y + (flipY ? -size.height : size.height)), paint);
   }
 
   @override
@@ -461,66 +618,115 @@ class _Thumb extends StatelessWidget {
   final String path;
   final int number;
   final bool selected;
-  const _Thumb({required this.path, required this.number, this.selected = false});
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _Thumb({
+    required this.path,
+    required this.number,
+    this.selected = false,
+    required this.onTap,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
     final file = File(path);
-    return Stack(
-      children: [
-        Container(
-          width: 58, height: 74,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected ? AppTheme.primary : Colors.transparent,
-              width: 2,
-            ),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: file.existsSync()
-                ? Image.file(file, fit: BoxFit.cover)
-                : Container(
-                    color: const Color(0xFFF5E4CC),
-                    child: const Icon(Icons.description_outlined,
-                        color: Colors.grey, size: 22),
-                  ),
-          ),
-        ),
-        Positioned(
-          bottom: 4, right: 4,
-          child: Container(
-            width: 16, height: 16,
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 58,
+            height: 74,
             decoration: BoxDecoration(
-              color: selected ? AppTheme.primary : Colors.grey,
-              shape: BoxShape.circle,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: selected ? AppTheme.primary : Colors.transparent,
+                width: 2,
+              ),
             ),
-            child: Center(
-              child: Text(
-                '$number',
-                style: const TextStyle(
-                    color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: file.existsSync()
+                  ? Image.file(file, fit: BoxFit.cover, cacheWidth: 160)
+                  : Container(
+                      color: const Color(0xFFF5E4CC),
+                      child: const Icon(Icons.description_outlined,
+                          color: Colors.grey, size: 22),
+                    ),
+            ),
+          ),
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Semantics(
+              button: true,
+              label: 'Remove page $number',
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: const BoxDecoration(
+                    color: Colors.black87,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 12),
+                ),
               ),
             ),
           ),
-        ),
-      ],
+          Positioned(
+            bottom: 4,
+            right: 4,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: selected ? AppTheme.primary : Colors.grey,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '$number',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 class _AddBtn extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AddBtn({required this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 58, height: 74,
-      decoration: BoxDecoration(
-        color: Colors.white10,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white24),
+    return Semantics(
+      button: true,
+      label: 'Add page from gallery',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 58,
+          height: 74,
+          decoration: BoxDecoration(
+            color: Colors.white10,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: const Icon(Icons.add, color: Colors.white54, size: 24),
+        ),
       ),
-      child: const Icon(Icons.add, color: Colors.white38, size: 24),
     );
   }
 }

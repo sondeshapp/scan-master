@@ -1,0 +1,130 @@
+name: Android APK Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish Android APK
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Ensure Android SDK 37 is installed
+        run: |
+          if [ -n "${ANDROID_HOME:-}" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" >/dev/null || true
+          fi
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ] && [ -z "$ANDROID_KEY_ALIAS" ] && [ -z "$ANDROID_KEY_PASSWORD" ] && [ -z "$ANDROID_STORE_PASSWORD" ]; then
+            echo "::warning::Android signing secrets are not configured; falling back to debug signing config."
+            exit 0
+          fi
+
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_STORE_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "Required GitHub Actions secret is missing: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/scanmaster-upload-key.jks
+          cat > android/key.properties <<EOF
+          storeFile=scanmaster-upload-key.jks
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run tests
+        run: flutter test
+
+      - name: Build release APK
+        run: flutter build apk --release --build-number "$GITHUB_RUN_NUMBER"
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          version="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)"
+          if [ -z "$version" ]; then
+            echo "Could not read the app version from pubspec.yaml" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+          fi
+          asset="ScanMaster-${tag}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$asset"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APP_VERSION: ${{ steps.release.outputs.version }}
+          APK_ASSET: ${{ steps.release.outputs.asset }}
+        run: |
+          release_title="ScanMaster ${APP_VERSION} (build ${GITHUB_RUN_NUMBER})"
+          release_notes_file=".github/release-notes/${APP_VERSION}.md"
+          version_release_count="$(gh release list --limit 100 --json tagName --jq "[.[] | select(.tagName | startswith(\"v${APP_VERSION}\"))] | length")"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$APK_ASSET" --clobber
+          elif [ -f "$release_notes_file" ] && [ "$version_release_count" = "0" ]; then
+            gh release create "$RELEASE_TAG" "$APK_ASSET" \
+              --title "$release_title" \
+              --notes "$(cat "$release_notes_file")" \
+              --generate-notes \
+              --target "$GITHUB_SHA"
+          elif [ "$(gh release list --limit 1 --json tagName --jq 'length')" = "0" ] && [ -f ".github/first-release-notes.md" ]; then
+            gh release create "$RELEASE_TAG" "$APK_ASSET" \
+              --title "$release_title" \
+              --notes "$(cat .github/first-release-notes.md)" \
+              --generate-notes \
+              --target "$GITHUB_SHA"
+          else
+            gh release create "$RELEASE_TAG" "$APK_ASSET" \
+              --title "$release_title" \
+              --generate-notes \
+              --target "$GITHUB_SHA"
+          fi

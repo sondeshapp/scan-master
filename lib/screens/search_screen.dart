@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import '../app_theme.dart';
 import '../data/document_store.dart';
 import '../data/models.dart';
+import 'document_viewer_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -16,7 +17,6 @@ class _SearchScreenState extends State<SearchScreen> {
   final _ctrl = TextEditingController();
   final _store = DocumentStore.instance;
   List<ScanDocument> _results = [];
-  final List<String> _recentSearches = [];
 
   void _runSearch(String q) {
     setState(() => _results = _store.search(q));
@@ -24,18 +24,35 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _tapRecent(String q) {
     _ctrl.text = q;
+    _ctrl.selection = TextSelection.fromPosition(
+      TextPosition(offset: q.length),
+    );
     _runSearch(q);
   }
 
-  void _clearRecents() => setState(() => _recentSearches.clear());
+  Future<void> _clearRecents() async {
+    await _store.clearRecentSearches();
+    if (mounted) setState(() {});
+  }
 
-  void _submitSearch() {
+  Future<void> _submitSearch() async {
     final q = _ctrl.text.trim();
     if (q.isEmpty) return;
-    if (!_recentSearches.contains(q)) {
-      setState(() => _recentSearches.insert(0, q));
+    await _store.addRecentSearch(q);
+    if (mounted) _runSearch(q);
+  }
+
+  Future<void> _openDocument(ScanDocument doc) async {
+    final q = _ctrl.text.trim();
+    if (q.isNotEmpty) {
+      await _store.addRecentSearch(q);
     }
-    _runSearch(q);
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DocumentViewerScreen(doc: doc)),
+    );
+    if (mounted) _runSearch(_ctrl.text);
   }
 
   @override
@@ -107,6 +124,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   if (_ctrl.text.isNotEmpty)
                     IconButton(
+                      tooltip: 'Clear search',
                       icon: const Icon(Icons.cancel,
                           color: AppTheme.textGray, size: 18),
                       onPressed: () {
@@ -137,7 +155,8 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildRecentsView() {
-    if (_recentSearches.isEmpty) {
+    final recents = _store.recentSearches;
+    if (recents.isEmpty) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -181,7 +200,7 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           ),
         ),
-        ..._recentSearches.map(
+        ...recents.map(
           (r) => ListTile(
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -230,7 +249,17 @@ class _SearchScreenState extends State<SearchScreen> {
                 letterSpacing: 0.5),
           ),
         ),
-        ..._results.map((doc) => _ResultItem(doc: doc, query: q)),
+        ..._results.map(
+          (doc) => _ResultItem(
+            doc: doc,
+            query: q,
+            folder: _store.folderById(doc.folderId),
+            onTap: () => _openDocument(doc),
+            onDeleted: () {
+              if (mounted) _runSearch(_ctrl.text);
+            },
+          ),
+        ),
       ],
     );
   }
@@ -239,100 +268,141 @@ class _SearchScreenState extends State<SearchScreen> {
 class _ResultItem extends StatelessWidget {
   final ScanDocument doc;
   final String query;
+  final ScanFolder? folder;
+  final VoidCallback onTap;
+  final VoidCallback onDeleted;
 
-  const _ResultItem({required this.doc, required this.query});
+  const _ResultItem({
+    required this.doc,
+    required this.query,
+    this.folder,
+    required this.onTap,
+    required this.onDeleted,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 8, 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Thumbnail
-          Container(
-            width: 64, height: 80,
-            decoration: BoxDecoration(
-              color: doc.iconColor.withAlpha(31),
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(20),
-                  blurRadius: 8,
-                  offset: const Offset(2, 4),
-                ),
-              ],
-            ),
-            child: doc.pageImagePaths.isNotEmpty &&
-                    File(doc.pageImagePaths.first).existsSync()
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.file(
-                      File(doc.pageImagePaths.first),
-                      fit: BoxFit.cover,
-                    ),
-                  )
-                : Icon(Icons.picture_as_pdf_rounded,
-                    color: doc.iconColor, size: 28),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                _HighlightText(text: doc.name, query: query),
-                const SizedBox(height: 3),
-                Text(
-                  doc.meta,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textGray),
-                ),
-              ],
-            ),
-          ),
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_horiz, color: AppTheme.textGray, size: 20),
-            onSelected: (v) async {
-              if (v == 'share') {
-                final file = File(doc.pdfPath);
-                if (await file.exists()) {
-                  await Share.shareXFiles(
-                    [XFile(doc.pdfPath, mimeType: 'application/pdf')],
-                    subject: doc.name,
-                  );
-                }
-              } else if (v == 'delete') {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    title: const Text('Delete?'),
-                    content: Text('Delete "${doc.name}"?'),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel')),
-                      FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('Delete'),
-                      ),
-                    ],
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Thumbnail
+            Container(
+              width: 64,
+              height: 80,
+              decoration: BoxDecoration(
+                color: doc.iconColor.withAlpha(31),
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(20),
+                    blurRadius: 8,
+                    offset: const Offset(2, 4),
                   ),
-                );
-                if (confirmed == true && context.mounted) {
-                  await DocumentStore.instance.deleteDocument(doc.id);
+                ],
+              ),
+              child: doc.pageImagePaths.isNotEmpty &&
+                      File(doc.pageImagePaths.first).existsSync()
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.file(
+                        File(doc.pageImagePaths.first),
+                        fit: BoxFit.cover,
+                        cacheWidth: 180,
+                      ),
+                    )
+                  : Icon(Icons.picture_as_pdf_rounded,
+                      color: doc.iconColor, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 4),
+                  _HighlightText(text: doc.name, query: query),
+                  const SizedBox(height: 3),
+                  Text(
+                    doc.meta,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textGray),
+                  ),
+                  if (folder != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.folder_rounded,
+                            size: 13, color: folder!.color),
+                        const SizedBox(width: 4),
+                        Text(
+                          folder!.name,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: folder!.color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'More options',
+              icon: const Icon(Icons.more_horiz,
+                  color: AppTheme.textGray, size: 20),
+              onSelected: (v) async {
+                if (v == 'share') {
+                  final file = File(doc.pdfPath);
+                  if (await file.exists()) {
+                    await SharePlus.instance.share(
+                      ShareParams(
+                        files: [
+                          XFile(doc.pdfPath, mimeType: 'application/pdf')
+                        ],
+                        subject: doc.name,
+                      ),
+                    );
+                  }
+                } else if (v == 'delete') {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      title: const Text('Delete?'),
+                      content: Text('Delete "${doc.name}"?'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(dialogCtx, false),
+                            child: const Text('Cancel')),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red),
+                          onPressed: () => Navigator.pop(dialogCtx, true),
+                          child: const Text('Delete'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await DocumentStore.instance.deleteDocument(doc.id);
+                    onDeleted();
+                  }
                 }
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'share', child: Text('Share')),
-              PopupMenuItem(
-                  value: 'delete',
-                  child: Text('Delete', style: TextStyle(color: Colors.red))),
-            ],
-          ),
-        ],
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'share', child: Text('Share')),
+                PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete', style: TextStyle(color: Colors.red))),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -348,20 +418,34 @@ class _HighlightText extends StatelessWidget {
         fontSize: 14,
         fontWeight: FontWeight.w600,
         color: AppTheme.textDark);
-    if (query.isEmpty) return Text(text, style: base);
+    final q = query.trim();
+    if (q.isEmpty) return Text(text, style: base);
     final lower = text.toLowerCase();
-    final idx = lower.indexOf(query.toLowerCase());
-    if (idx < 0) return Text(text, style: base);
-    return RichText(
-      text: TextSpan(style: base, children: [
-        if (idx > 0) TextSpan(text: text.substring(0, idx)),
+    final qLower = q.toLowerCase();
+    if (!lower.contains(qLower)) return Text(text, style: base);
+
+    final spans = <TextSpan>[];
+    var start = 0;
+    while (true) {
+      final idx = lower.indexOf(qLower, start);
+      if (idx < 0) {
+        if (start < text.length) {
+          spans.add(TextSpan(text: text.substring(start)));
+        }
+        break;
+      }
+      if (idx > start) {
+        spans.add(TextSpan(text: text.substring(start, idx)));
+      }
+      spans.add(
         TextSpan(
-          text: text.substring(idx, idx + query.length),
+          text: text.substring(idx, idx + q.length),
           style: base.copyWith(color: AppTheme.primary),
         ),
-        if (idx + query.length < text.length)
-          TextSpan(text: text.substring(idx + query.length)),
-      ]),
-    );
+      );
+      start = idx + q.length;
+    }
+
+    return RichText(text: TextSpan(style: base, children: spans));
   }
 }

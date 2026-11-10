@@ -42,9 +42,11 @@ class _DocumentViewerScreenState extends State<DocumentViewerScreen> {
   Future<void> _share() async {
     final file = File(widget.doc.pdfPath);
     if (await file.exists()) {
-      await Share.shareXFiles(
-        [XFile(widget.doc.pdfPath, mimeType: 'application/pdf')],
-        subject: widget.doc.name,
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(widget.doc.pdfPath, mimeType: 'application/pdf')],
+          subject: widget.doc.name,
+        ),
       );
     }
   }
@@ -122,10 +124,17 @@ class _DocumentViewerScreenState extends State<DocumentViewerScreen> {
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.arrow_back_ios_new,
-                color: Colors.white, size: 20),
+          Semantics(
+            button: true,
+            label: 'Back',
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.arrow_back_ios_new,
+                    color: Colors.white, size: 20),
+              ),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -149,12 +158,16 @@ class _DocumentViewerScreenState extends State<DocumentViewerScreen> {
               ],
             ),
           ),
-          GestureDetector(
-            onTap: _share,
-            child: const Padding(
-              padding: EdgeInsets.all(8),
-              child: Icon(Icons.share_outlined,
-                  color: Colors.white, size: 22),
+          Semantics(
+            button: true,
+            label: 'Share document',
+            child: GestureDetector(
+              onTap: _share,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.share_outlined,
+                    color: Colors.white, size: 22),
+              ),
             ),
           ),
         ],

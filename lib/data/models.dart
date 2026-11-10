@@ -104,6 +104,17 @@ class ScanFolder {
 
   Color get color => Color(colorValue);
 
+  ScanFolder copyWith({
+    String? name,
+    int? colorValue,
+  }) =>
+      ScanFolder(
+        id: id,
+        name: name ?? this.name,
+        colorValue: colorValue ?? this.colorValue,
+        createdAt: createdAt,
+      );
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
