@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
+import '../data/document_store.dart';
 import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -9,31 +10,20 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
+class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..forward().whenComplete(_goHome);
+    _initAndNavigate();
   }
 
-  void _goHome() {
+  Future<void> _initAndNavigate() async {
+    await DocumentStore.instance.init();
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
   }
 
   @override
@@ -99,16 +89,12 @@ class _SplashScreenState extends State<SplashScreen>
             const Spacer(flex: 3),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 100),
-              child: AnimatedBuilder(
-                animation: _ctrl,
-                builder: (_, _) => ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: _ctrl.value,
-                    backgroundColor: AppTheme.separator,
-                    valueColor: const AlwaysStoppedAnimation(AppTheme.primary),
-                    minHeight: 4,
-                  ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: const LinearProgressIndicator(
+                  backgroundColor: AppTheme.separator,
+                  valueColor: AlwaysStoppedAnimation(AppTheme.primary),
+                  minHeight: 4,
                 ),
               ),
             ),
