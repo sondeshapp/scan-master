@@ -1,6 +1,9 @@
 name: Android APK Release
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -18,7 +21,7 @@ concurrency:
 jobs:
   release:
     name: Build and publish Android APK
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -28,7 +31,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -80,6 +83,7 @@ jobs:
         run: flutter build apk --release --build-number "$GITHUB_RUN_NUMBER"
 
       - name: Prepare release metadata
+        if: github.event_name != 'pull_request'
         id: release
         run: |
           version="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)"
@@ -99,6 +103,7 @@ jobs:
           echo "asset=$asset" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
