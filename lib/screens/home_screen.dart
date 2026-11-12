@@ -64,11 +64,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() {});
   }
 
-  void _openViewer(ScanDocument doc) {
-    Navigator.push(
+  Future<void> _openViewer(ScanDocument doc) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => DocumentViewerScreen(doc: doc)),
     );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openScanner() async {
@@ -99,46 +100,49 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           title: Text(existing == null ? 'New Folder' : 'Edit Folder'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Folder name',
-                  border: OutlineInputBorder(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Folder name',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(colors.length, (i) {
-                  return GestureDetector(
-                    onTap: () => setS(() => selectedColor = i),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: colors[i],
-                        shape: BoxShape.circle,
-                        border: selectedColor == i
-                            ? Border.all(color: Colors.white, width: 2)
-                            : null,
-                        boxShadow: selectedColor == i
-                            ? [
-                                BoxShadow(
-                                    color: colors[i].withAlpha(120),
-                                    blurRadius: 8)
-                              ]
-                            : null,
+                const SizedBox(height: 16),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(colors.length, (i) {
+                    return GestureDetector(
+                      onTap: () => setS(() => selectedColor = i),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: colors[i],
+                          shape: BoxShape.circle,
+                          border: selectedColor == i
+                              ? Border.all(color: Colors.white, width: 2)
+                              : null,
+                          boxShadow: selectedColor == i
+                              ? [
+                                  BoxShadow(
+                                      color: colors[i].withAlpha(120),
+                                      blurRadius: 8)
+                                ]
+                              : null,
+                        ),
                       ),
-                    ),
-                  );
-                }),
-              ),
-            ],
+                    );
+                  }),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -173,52 +177,61 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showFolderOptions(ScanFolder folder) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppTheme.separator,
-                borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppTheme.separator,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              folder.name,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-                color: AppTheme.textDark,
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  folder.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: AppTheme.textDark,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit Folder'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showFolderDialog(existing: folder);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete Folder',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _store.deleteFolder(folder.id);
-                if (mounted) setState(() {});
-              },
-            ),
-          ],
+              const SizedBox(height: 8),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Edit Folder'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showFolderDialog(existing: folder);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Delete Folder',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _store.deleteFolder(folder.id);
+                  if (mounted) setState(() {});
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -228,6 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final parentContext = context;
     showModalBottomSheet(
       context: parentContext,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -315,63 +329,39 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
-    final title = _navIndex == 3 ? 'Recents' : 'Folders';
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              if (_store.documents.isNotEmpty)
-                Text(
-                  _storageLabel,
-                  style:
-                      const TextStyle(fontSize: 12, color: AppTheme.textGray),
-                ),
-            ],
-          ),
-          Semantics(
-            button: true,
-            excludeSemantics: true,
-            label: 'New Folder',
-            child: GestureDetector(
-              onTap: () => _showFolderDialog(),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF4FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add, size: 16, color: AppTheme.primary),
-                    SizedBox(width: 4),
-                    Text(
-                      'New Folder',
-                      style: TextStyle(
-                        color: AppTheme.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          const Text(
+            'ScanMaster',
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w700,
+              color: AppTheme.textDark,
+              letterSpacing: -0.5,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
+          const Text(
+            'by sondesh',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: AppTheme.textGray,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (_store.documents.isNotEmpty)
+            Text(
+              _storageLabel,
+              style: const TextStyle(fontSize: 12, color: AppTheme.textGray),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
         ],
       ),
     );
@@ -393,7 +383,8 @@ class _HomeScreenState extends State<HomeScreen> {
             if (mounted) setState(() {});
           },
           child: Container(
-            height: 47,
+            constraints: const BoxConstraints(minHeight: 47),
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
             decoration: BoxDecoration(
               color: AppTheme.cardBg,
               borderRadius: BorderRadius.circular(12),
@@ -401,12 +392,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: const Row(
               children: [
-                SizedBox(width: 16),
                 Icon(Icons.search, color: AppTheme.textGray, size: 20),
                 SizedBox(width: 12),
-                Text(
-                  'Search folders and files',
-                  style: TextStyle(color: AppTheme.textGray, fontSize: 15),
+                Expanded(
+                  child: Text(
+                    'Search folders and files',
+                    style: TextStyle(color: AppTheme.textGray, fontSize: 15),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -420,6 +414,14 @@ class _HomeScreenState extends State<HomeScreen> {
     List<ScanFolder> folders, {
     required bool showViewAll,
   }) {
+    final sortedFolders = [...folders]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    // On Home page (showViewAll == true), show top 3 recent folders + '+ New Folder' as the 4th card
+    final displayedFolders = showViewAll
+        ? sortedFolders.take(3).toList()
+        : sortedFolders;
+    final totalGridCount = displayedFolders.length + 1;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -428,12 +430,16 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'My Folders',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textDark,
+              const Flexible(
+                child: Text(
+                  'My Folders',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textDark,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (showViewAll)
@@ -451,60 +457,35 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (folders.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: GestureDetector(
-              onTap: () => _showFolderDialog(),
-              child: Container(
-                height: 80,
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBg,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.separator),
-                ),
-                child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.create_new_folder_outlined,
-                          color: AppTheme.textGray, size: 28),
-                      SizedBox(height: 6),
-                      Text('Create a folder',
-                          style: TextStyle(color: AppTheme.textGray)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          )
-        else
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.26,
-            ),
-            itemCount: folders.length,
-            itemBuilder: (_, i) {
-              final f = folders[i];
-              return _FolderCard(
-                folder: f,
-                fileCount: _store.folderFileCount(f.id),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => FolderScreen(folder: f)),
-                ).then((_) {
-                  if (mounted) setState(() {});
-                }),
-                onLongPress: () => _showFolderOptions(f),
-              );
-            },
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            mainAxisExtent: 132,
           ),
+          itemCount: totalGridCount,
+          itemBuilder: (_, i) {
+            if (i == displayedFolders.length) {
+              return _NewFolderCard(onTap: () => _showFolderDialog());
+            }
+            final f = displayedFolders[i];
+            return _FolderCard(
+              folder: f,
+              fileCount: _store.folderFileCount(f.id),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => FolderScreen(folder: f)),
+              ).then((_) {
+                if (mounted) setState(() {});
+              }),
+              onLongPress: () => _showFolderOptions(f),
+            );
+          },
+        ),
       ],
     );
   }
@@ -646,7 +627,8 @@ class _HomeScreenState extends State<HomeScreen> {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
-                  height: 70,
+                  constraints: const BoxConstraints(minHeight: 70),
+                  padding: const EdgeInsets.symmetric(vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withAlpha(224),
                     borderRadius: BorderRadius.circular(24),
@@ -656,38 +638,46 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _NavBtn(
-                        icon: Icons.home_rounded,
-                        label: 'Home',
-                        selected: _navIndex == 0,
-                        onTap: () => setState(() => _navIndex = 0),
+                      Expanded(
+                        child: _NavBtn(
+                          icon: Icons.home_rounded,
+                          label: 'Home',
+                          selected: _navIndex == 0,
+                          onTap: () => setState(() => _navIndex = 0),
+                        ),
                       ),
-                      _NavBtn(
-                        icon: Icons.search_rounded,
-                        label: 'Search',
-                        selected: _navIndex == 1,
-                        onTap: () async {
-                          final prev = _navIndex;
-                          setState(() => _navIndex = 1);
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const SearchScreen()),
-                          );
-                          if (mounted) setState(() => _navIndex = prev);
-                        },
+                      Expanded(
+                        child: _NavBtn(
+                          icon: Icons.search_rounded,
+                          label: 'Search',
+                          selected: _navIndex == 1,
+                          onTap: () async {
+                            final prev = _navIndex;
+                            setState(() => _navIndex = 1);
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const SearchScreen()),
+                            );
+                            if (mounted) setState(() => _navIndex = prev);
+                          },
+                        ),
                       ),
-                      _NavBtn(
-                        icon: Icons.folder_outlined,
-                        label: 'Folders',
-                        selected: _navIndex == 2,
-                        onTap: () => setState(() => _navIndex = 2),
+                      Expanded(
+                        child: _NavBtn(
+                          icon: Icons.folder_outlined,
+                          label: 'Folders',
+                          selected: _navIndex == 2,
+                          onTap: () => setState(() => _navIndex = 2),
+                        ),
                       ),
-                      _NavBtn(
-                        icon: Icons.history_rounded,
-                        label: 'Recents',
-                        selected: _navIndex == 3,
-                        onTap: () => setState(() => _navIndex = 3),
+                      Expanded(
+                        child: _NavBtn(
+                          icon: Icons.history_rounded,
+                          label: 'Recents',
+                          selected: _navIndex == 3,
+                          onTap: () => setState(() => _navIndex = 3),
+                        ),
                       ),
                     ],
                   ),
@@ -752,18 +742,23 @@ class _NavBtn extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: color, size: 24),
               if (label.isNotEmpty) ...[
                 const SizedBox(height: 2),
-                Text(label,
-                    style: TextStyle(
-                        color: color,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500)),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ],
           ),
@@ -804,9 +799,10 @@ class _FolderCard extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Container(
               width: 44,
@@ -817,22 +813,108 @@ class _FolderCard extends StatelessWidget {
               ),
               child: Icon(Icons.folder_rounded, color: folder.color, size: 28),
             ),
-            const Spacer(),
-            Text(
-              folder.name,
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppTheme.textDark,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '$fileCount ${fileCount == 1 ? "file" : "files"}',
-              style: const TextStyle(fontSize: 12, color: AppTheme.textGray),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  folder.name,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textDark,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$fileCount ${fileCount == 1 ? "file" : "files"}',
+                  style:
+                      const TextStyle(fontSize: 12, color: AppTheme.textGray),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NewFolderCard extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _NewFolderCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'New Folder',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppTheme.cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: AppTheme.primary.withAlpha(70),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(8),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF4FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.create_new_folder_rounded,
+                  color: AppTheme.primary,
+                  size: 26,
+                ),
+              ),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'New Folder',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.primary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Tap to create',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textGray),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -938,6 +1020,7 @@ class _FileCard extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: AppTheme.textDark,
                     ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 3),
@@ -948,6 +1031,7 @@ class _FileCard extends StatelessWidget {
                           doc.meta,
                           style: const TextStyle(
                               fontSize: 12, color: AppTheme.textGray),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -956,12 +1040,16 @@ class _FileCard extends StatelessWidget {
                         Icon(Icons.folder_rounded,
                             size: 13, color: folder!.color),
                         const SizedBox(width: 3),
-                        Text(
-                          folder!.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: folder!.color,
+                        Flexible(
+                          child: Text(
+                            folder!.name,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: folder!.color,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -1013,68 +1101,72 @@ class _FileOptionsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppTheme.separator,
-              borderRadius: BorderRadius.circular(2),
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.separator,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              doc.name,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                  color: AppTheme.textDark),
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                doc.name,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    color: AppTheme.textDark),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(),
-          _Option(
-            icon: Icons.edit_outlined,
-            label: 'Rename',
-            onTap: () {
-              Navigator.pop(context);
-              _showRenameDialog();
-            },
-          ),
-          _Option(
-            icon: Icons.share_outlined,
-            label: 'Share',
-            onTap: () {
-              Navigator.pop(context);
-              onShare();
-            },
-          ),
-          if (folders.isNotEmpty)
+            const SizedBox(height: 8),
+            const Divider(),
             _Option(
-              icon: Icons.drive_file_move_outlined,
-              label: 'Move to folder',
+              icon: Icons.edit_outlined,
+              label: 'Rename',
               onTap: () {
                 Navigator.pop(context);
-                _showMoveDialog();
+                _showRenameDialog();
               },
             ),
-          _Option(
-            icon: Icons.delete_outline,
-            label: 'Delete',
-            color: Colors.red,
-            onTap: () {
-              Navigator.pop(context);
-              _confirmDelete();
-            },
-          ),
-        ],
+            _Option(
+              icon: Icons.share_outlined,
+              label: 'Share',
+              onTap: () {
+                Navigator.pop(context);
+                onShare();
+              },
+            ),
+            if (folders.isNotEmpty)
+              _Option(
+                icon: Icons.drive_file_move_outlined,
+                label: 'Move to folder',
+                onTap: () {
+                  Navigator.pop(context);
+                  _showMoveDialog();
+                },
+              ),
+            _Option(
+              icon: Icons.delete_outline,
+              label: 'Delete',
+              color: Colors.red,
+              onTap: () {
+                Navigator.pop(context);
+                _confirmDelete();
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

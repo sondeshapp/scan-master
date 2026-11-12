@@ -181,7 +181,7 @@ class DocumentStore {
       colorValue: colorValue,
       createdAt: DateTime.now(),
     );
-    _folders.add(folder);
+    _folders.insert(0, folder);
     await _persist();
     return folder;
   }

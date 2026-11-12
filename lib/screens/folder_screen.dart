@@ -38,11 +38,12 @@ class _FolderScreenState extends State<FolderScreen> {
     if (mounted) setState(() {});
   }
 
-  void _openViewer(ScanDocument doc) {
-    Navigator.push(
+  Future<void> _openViewer(ScanDocument doc) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => DocumentViewerScreen(doc: doc)),
     );
+    if (mounted) setState(() {});
   }
 
   Future<void> _scanIntoFolder() async {
@@ -75,46 +76,49 @@ class _FolderScreenState extends State<FolderScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           title: const Text('Edit Folder'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Folder name',
-                  border: OutlineInputBorder(),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Folder name',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(colors.length, (i) {
-                  return GestureDetector(
-                    onTap: () => setS(() => selectedColor = i),
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      decoration: BoxDecoration(
-                        color: colors[i],
-                        shape: BoxShape.circle,
-                        border: selectedColor == i
-                            ? Border.all(color: Colors.white, width: 2)
-                            : null,
-                        boxShadow: selectedColor == i
-                            ? [
-                                BoxShadow(
-                                    color: colors[i].withAlpha(120),
-                                    blurRadius: 8)
-                              ]
-                            : null,
+                const SizedBox(height: 16),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(colors.length, (i) {
+                    return GestureDetector(
+                      onTap: () => setS(() => selectedColor = i),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: colors[i],
+                          shape: BoxShape.circle,
+                          border: selectedColor == i
+                              ? Border.all(color: Colors.white, width: 2)
+                              : null,
+                          boxShadow: selectedColor == i
+                              ? [
+                                  BoxShadow(
+                                      color: colors[i].withAlpha(120),
+                                      blurRadius: 8)
+                                ]
+                              : null,
+                        ),
                       ),
-                    ),
-                  );
-                }),
-              ),
-            ],
+                    );
+                  }),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -252,101 +256,108 @@ class _FolderScreenState extends State<FolderScreen> {
   void _showOptions(ScanDocument doc) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetCtx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: AppTheme.separator,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.open_in_new_outlined),
-              title: const Text('Open'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _openViewer(doc);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Rename'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _showRenameDocDialog(doc);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share_outlined),
-              title: const Text('Share'),
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                final file = File(doc.pdfPath);
-                if (await file.exists()) {
-                  await SharePlus.instance.share(
-                    ShareParams(
-                      files: [XFile(doc.pdfPath, mimeType: 'application/pdf')],
-                      subject: doc.name,
+      builder: (sheetCtx) => SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: AppTheme.separator,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.open_in_new_outlined),
+                title: const Text('Open'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _openViewer(doc);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Rename'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _showRenameDocDialog(doc);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share_outlined),
+                title: const Text('Share'),
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  final file = File(doc.pdfPath);
+                  if (await file.exists()) {
+                    await SharePlus.instance.share(
+                      ShareParams(
+                        files: [
+                          XFile(doc.pdfPath, mimeType: 'application/pdf')
+                        ],
+                        subject: doc.name,
+                      ),
+                    );
+                  }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_outlined),
+                title: const Text('Move to folder'),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _showMoveDocDialog(doc);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.inbox_outlined),
+                title: const Text('Remove from folder'),
+                onTap: () async {
+                  Navigator.pop(sheetCtx);
+                  await _store.moveDocument(doc.id, null);
+                  if (mounted) setState(() {});
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title:
+                    const Text('Delete', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  showDialog(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      title: const Text('Delete Document'),
+                      content: Text('Delete "${doc.name}"?'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(dialogCtx),
+                            child: const Text('Cancel')),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: Colors.red),
+                          onPressed: () async {
+                            Navigator.pop(dialogCtx);
+                            await _store.deleteDocument(doc.id);
+                            if (mounted) setState(() {});
+                          },
+                          child: const Text('Delete'),
+                        ),
+                      ],
                     ),
                   );
-                }
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.drive_file_move_outlined),
-              title: const Text('Move to folder'),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                _showMoveDocDialog(doc);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.inbox_outlined),
-              title: const Text('Remove from folder'),
-              onTap: () async {
-                Navigator.pop(sheetCtx);
-                await _store.moveDocument(doc.id, null);
-                if (mounted) setState(() {});
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete', style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(sheetCtx);
-                showDialog(
-                  context: context,
-                  builder: (dialogCtx) => AlertDialog(
-                    title: const Text('Delete Document'),
-                    content: Text('Delete "${doc.name}"?'),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(dialogCtx),
-                          child: const Text('Cancel')),
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                            backgroundColor: Colors.red),
-                        onPressed: () async {
-                          Navigator.pop(dialogCtx);
-                          await _store.deleteDocument(doc.id);
-                          if (mounted) setState(() {});
-                        },
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -530,10 +541,13 @@ class _FolderScreenState extends State<FolderScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 3),
-                              Text(doc.meta,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppTheme.textGray)),
+                              Text(
+                                doc.meta,
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppTheme.textGray),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ],
                           ),
                         ),

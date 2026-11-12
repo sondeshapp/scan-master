@@ -87,7 +87,7 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           Expanded(
             child: Container(
-              height: 44,
+              constraints: const BoxConstraints(minHeight: 44),
               decoration: BoxDecoration(
                 color: AppTheme.cardBg,
                 borderRadius: BorderRadius.circular(12),
@@ -222,16 +222,20 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget _buildResultsView(String q) {
     if (_results.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.search_off, size: 48, color: AppTheme.textGray),
-            const SizedBox(height: 12),
-            Text(
-              'No results for "$q"',
-              style: const TextStyle(color: AppTheme.textGray, fontSize: 16),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.search_off, size: 48, color: AppTheme.textGray),
+              const SizedBox(height: 12),
+              Text(
+                'No results for "$q"',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textGray, fontSize: 16),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -338,12 +342,16 @@ class _ResultItem extends StatelessWidget {
                         Icon(Icons.folder_rounded,
                             size: 13, color: folder!.color),
                         const SizedBox(width: 4),
-                        Text(
-                          folder!.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: folder!.color,
+                        Flexible(
+                          child: Text(
+                            folder!.name,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: folder!.color,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

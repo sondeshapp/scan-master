@@ -175,7 +175,9 @@ void main() {
       final homeTabDy = tester.getBottomLeft(find.text('Home')).dy;
       expect(homeTabDy, greaterThan(screenBottom - 80));
 
-      // Home tab: shows My Folders + Uncategorized Files (empty since doc is in folder)
+      // Home tab: shows ScanMaster by sondesh header + My Folders + Uncategorized Files
+      expect(find.text('ScanMaster'), findsOneWidget);
+      expect(find.text('by sondesh'), findsOneWidget);
       expect(find.text('My Folders'), findsOneWidget);
       expect(find.text('Uncategorized Files'), findsOneWidget);
 
@@ -211,8 +213,13 @@ void main() {
       await tester.tap(find.text('Rotate'));
       await tester.pump();
 
-      // Crop cycle
+      // Enter interactive Crop mode, select Auto Margin, and Apply
       await tester.tap(find.text('Crop'));
+      await tester.pump();
+      expect(find.text('Auto Margin'), findsOneWidget);
+      await tester.tap(find.text('Auto Margin'));
+      await tester.pump();
+      await tester.tap(find.text('Apply'));
       await tester.pump();
       expect(find.text('Cropped'), findsOneWidget);
 
@@ -229,9 +236,9 @@ void main() {
       expect(find.text('Delete Page'), findsOneWidget);
       await tester.tap(find.text('Delete Page'));
       await tester.pump();
-      // Now only 1 page remains, so Delete Page is replaced by Text Mode
+      // Now only 1 page remains, so Delete Page changes to Discard
       expect(find.text('Delete Page'), findsNothing);
-      expect(find.text('Text Mode'), findsOneWidget);
+      expect(find.text('Discard'), findsOneWidget);
     });
 
     testWidgets(
